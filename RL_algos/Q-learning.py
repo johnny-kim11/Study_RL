@@ -6,17 +6,19 @@ import torch.nn as nn
 import copy
 from matplotlib import pyplot as plt
 
+from gym.wrappers import RecordVideo
+
 LEARNING_RATE = 0.0005
 GAMMA = 0.95
-ENV_NAME = 'CartPole-v1'
-EPSILON = 1.0
+ENV_NAME = 'LunarLander-v2' #'CartPole-v1' # 
+EPSILON = 0.1
 
 
 # Q function Network 
 class agent(nn.Module):
     def __init__(self) -> None:
         super(agent, self).__init__()
-        self.env = gym.make(ENV_NAME)
+        self.env = gym.make(ENV_NAME, continuous=False)
         # self.env.seed(0)
         self.input_size = self.env.observation_space.shape[0]
         self.output_size = self.env.action_space.n
@@ -45,7 +47,7 @@ class agent(nn.Module):
 class Q_learning():
     def __init__(self):
         self.agent = agent()
-        self.env = gym.make(ENV_NAME)
+        self.env = gym.make(ENV_NAME, continuous=False)
         self.epsilon = EPSILON
         self.gamma = GAMMA
         self.loss_fn = torch.nn.MSELoss()
@@ -54,7 +56,8 @@ class Q_learning():
     def train(self):
         print('------------Start Training--------------')
         reward_list = []
-        for epoch in range(1500):
+        max_reward = 0
+        for epoch in range(10000):
             done = False
             state_ = self.env.reset()[0]
             reward_sum = 0
@@ -97,18 +100,24 @@ class Q_learning():
                 self.optimizer.step()
                 
                 # (7)
-                if self.epsilon > 0.1:
-                    self.epsilon -= 1/1000
+            # if self.epsilon > 0.05:
+            #     self.epsilon -= 1/(1+epoch)
                 
                 state_ = next_state_
 
             print("Epoch: {}, reward: {}, step: {}".format(epoch, reward_sum, step))
             reward_list.append(reward_sum)
             
-            # (8)
-            if reward_sum > 490 and epoch > 1000:
+            if reward_sum >= max_reward:
+                max_reward = reward_sum
                 torch.save(copy.deepcopy(self.agent.state_dict()), "Q-learning.pt")
-                break
+                print("Model Saved")
+            
+            # (8)
+            # if reward_sum > 200 and epoch > 2500:
+            #     torch.save(copy.deepcopy(self.agent.state_dict()), "Q-learning.pt")
+            #     break
+            
         self.env.close()
         
         n_epochs = len(reward_list)
@@ -121,11 +130,12 @@ class Q_learning():
 def test(model):
     print('------------Start Test--------------')
     model.eval()
-    env = gym.make(env_name)
+    env = gym.make(ENV_NAME, continuous=False)
     for epoch in range(10):
         done = False
         state_ = env.reset()[0]
         reward_sum = 0
+        step = 0
         while(not done):
             state = torch.from_numpy(state_).float()
             q_val = model(state)
@@ -135,15 +145,36 @@ def test(model):
             reward_sum += reward
             state_ = next_state_
             done = terminated or truncated
-        print("Epoch: {}, reward: {}".format(epoch, reward_sum))
             
+            step += 1
+        print("Epoch: {}, reward: {}, step: {}".format(epoch, reward_sum, step))
+            
+            
+def test_video(model):
+    print('------------Start Test--------------')
+    model.eval()
+    env = RecordVideo(gym.make(game=ENV_NAME, continuous=False), "./")
+    for epoch in range(1):
+        done = False
+        state_ = env.reset()[0]
+        reward_sum = 0
+        step = 0
+        while(not done):
+            state = torch.from_numpy(state_).float()
+            q_val = model(state)
+            action = torch.argmax(q_val).item()
+            
+            next_state_, reward, terminated, truncated, _ = env.step(action)     
+            reward_sum += reward
+            state_ = next_state_
+            done = terminated or truncated
+            
+            step += 1
+        print("Epoch: {}, reward: {}, step: {}".format(epoch, reward_sum, step))
 if __name__ == "__main__":
-    env_name = "CartPole-v1"
-    epsilon = 1.0
-    gamma = 0.95
     model = Q_learning()
-    model.train()
+    # model.train()
 
     test_model = agent()
     test_model.load_state_dict(torch.load("Q-learning.pt"))
-    test(test_model)
+    test_video(test_model)
